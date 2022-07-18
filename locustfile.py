@@ -2,7 +2,9 @@ from locust import HttpUser, task, between, TaskSet
 
 class ProcessNumberTask(TaskSet):
 	def on_start(self):
+		request_body = {'authCode':'S3002610A','nonce':'mock'}
 		self.client.verify = False
+		self.client.post('/core/auth/mock-login', json=request_body, headers={'content-type':'application/json'})
 
 	@task(1)
 	def go_ha(self):
