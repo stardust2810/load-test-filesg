@@ -12,6 +12,7 @@ class ProcessNumberTask(TaskSet):
 			print(response_token.cookies)
 			filesg = response_token.cookies.get('filesg-cookie-id')
 			csrf = response_token.cookies.get('filesg-csrf-id')
+			print("[Dict] +++++++++++++++++++++++++")
 			print(self.client.cookies.get_dict())
 			print(filesg)
 			print(csrf)
@@ -26,6 +27,9 @@ class ProcessNumberTask(TaskSet):
 
 		print(self.client.cookies.get('filesg-cookie-id'))
 		print(self.client.cookies.get('filesg-csrf-id'))
+		
+		cookie='filesg-cookie-id='+self.client.cookies.get('filesg-cookie-id')+'; filesg-csrf-id='+csrf_token
+		self.clients.headers.update({'cookie', cookie})
 		print("+++++++++++++++++++++++++")
 
 	@task(1)
@@ -47,6 +51,10 @@ class ProcessNumberTask(TaskSet):
 			print(response_token.cookies.get('filesg-cookie-id'))
 			print(response_token.cookies.get('filesg-csrf-id'))
 			print("========================")
+
+			json_var = response_token.json()
+			name=json_var['name']
+			print('*************Name = ' + name)
 
 	@task(2)
 	def go_community(self):
