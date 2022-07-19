@@ -16,6 +16,7 @@ class ProcessNumberTask(TaskSet):
 			print(self.client.cookies.get_dict())
 			print(filesg)
 			print(csrf)
+			print(response_token.cookies['filesg-csrf-id'])
 			#self.client.cookies.set('filesg-cookie-id', filesg)
 			
 		print("+++++++++++++++++++++++++")
