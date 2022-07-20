@@ -157,7 +157,7 @@ class HelloWorldUser(HttpUser):
     tasks = [PortalAccess]
 
     def __init__(self):
-        super(HelloWorldUser, self).__init__()
+        super(HelloWorldUser, self).__init__(self)
         global ACCOUNTS
         if (ACCOUNTS == None):
             with open('test.csv', 'rb') as f:
