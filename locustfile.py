@@ -1,5 +1,7 @@
 from locust import HttpUser, task, between, TaskSet, LoadTestShape, events
 import json, string, secrets
+import logging, sys
+import csv
 
 class PortalAccess(TaskSet):
 
