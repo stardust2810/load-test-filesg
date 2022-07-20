@@ -1,4 +1,4 @@
-from locust import HttpUser, task, between, TaskSet, LoadTestShape
+from locust import HttpUser, task, between, TaskSet, LoadTestShape, events
 import json, string, secrets
 
 class PortalAccess(TaskSet):
@@ -7,6 +7,8 @@ class PortalAccess(TaskSet):
 	def on_start(self):
 		print('PortalAccess|INIT------------------------')
 		self.client.verify = False
+		if len(ACCOUNTS) > 0:
+			self.user = ACCOUNTS.pop()
 
 		#1 go to dev.file.gov.sg
 		#create CSRF token and put into cookie
@@ -31,7 +33,9 @@ class PortalAccess(TaskSet):
 
 		#3 call mock login with payload which returns filesg_cookie
 		print("[3] Call mock login===================")
-		request_body = {'authCode':'S3002610A','nonce':'mock'}
+		print('[Login]|User ' + self.user)
+		#request_body = {'authCode':'S3002610A','nonce':'mock'}
+		request_body = {'authCode':self.user,'nonce':'mock'}
 		with self.client.post('/core/auth/mock-login', json=request_body, headers={'accept':'application/json, text/plain, */*','content-type':'application/json', 'user-agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36'}, catch_response=True ) as response:
 			print(response.status_code)
 			print(response.cookies)
@@ -150,7 +154,15 @@ class HelloWorldUser(HttpUser):
 
     tasks = [PortalAccess]
 
- 
+    def __init__(self):
+        super(HelloWorldUser, self).__init__()
+        global ACCOUNTS
+        if (ACCOUNTS == None):
+            with open('test.csv', 'rb') as f:
+                reader = csv.reader(f)
+                ACCOUNTS = list(reader)
+
+
 class StagesShape(LoadTestShape):
 	"""
 	A simply load test shape class that has different user and spawn_rate at
@@ -166,11 +178,11 @@ class StagesShape(LoadTestShape):
 	"""
 
 	stages = [
-		{"duration": 5, "users": 10, "spawn_rate": 10},
-		{"duration": 60, "users": 100, "spawn_rate": 10},
-		{"duration": 120, "users": 200, "spawn_rate": 10},
-		{"duration": 180, "users": 300, "spawn_rate": 10},
-		{"duration": 240, "users": 400, "spawn_rate": 10},
+		{"duration": 14, "users": 7, "spawn_rate": 1},
+		#{"duration": 60, "users": 100, "spawn_rate": 10},
+		#{"duration": 120, "users": 200, "spawn_rate": 10},
+		#{"duration": 180, "users": 300, "spawn_rate": 10},
+		#{"duration": 240, "users": 400, "spawn_rate": 10},
 		{"duration": 360, "users": 1, "spawn_rate": 1}
 	]
 
