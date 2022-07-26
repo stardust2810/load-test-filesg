@@ -1,11 +1,8 @@
-from locust import HttpUser, task, between, TaskSet, LoadTestShape, events, constant
-import json, string, secrets, time
-import logging, sys
-import csv
-import requests
+from locust import HttpUser, task, between, TaskSet, LoadTestShape, events, constant, SequentialTaskSet
+import json, string, secrets, time, logging, sys, csv, requests, re, random
 from lxml import html
-import re
 
+#disable cert verification warnings
 requests.packages.urllib3.disable_warnings() 
 ACCOUNTS = None
 
@@ -44,10 +41,21 @@ def get_embedded_resources(response_content, filter='.*'):
 #-------------------------------------------
 
 
-class PortalAccess(TaskSet):
+class FileSGUserActivities(TaskSet):
+	#currently logged in user
 	current_user = 'NOT FOUND'
 	nonce = 'NOT FOUND'
 
+	#holds all the recent activities for the current user
+	all_activities = None
+
+	#holds all the files for an activity for the current user
+	individual_activity_files = None
+
+	#holds all the recent files for the current user
+	all_files = None
+
+	#user is able to login to their dashboard
 	def on_start(self):
 		self.client.verify = False
 		if len(ACCOUNTS) > 0:
@@ -61,7 +69,7 @@ class PortalAccess(TaskSet):
 		#create CSRF token and put into cookie
 		csrf_token = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(10))
 		self.client.cookies.set('filesg-csrf-id', csrf_token)
-		logging.info('[%s] Go to home page====================',self.current_user)
+		logging.info('[%s][Mock Login][Home page]',self.current_user)
 		with self.client.post('/', headers={'accept':'application/json, text/plain, */*','content-type':'application/json', 'user-agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36','cookie':'filesg-csrf-id='+csrf_token}, catch_response=True) as response:
 			logging.debug(response.status_code)
 			logging.debug(response.cookies)
@@ -69,48 +77,43 @@ class PortalAccess(TaskSet):
 			#logging.debug(self.client.cookies.get_dict())
 
 		#2 call get user details to create a session, should return csrf, filesg_cookie
-		logging.info('[%s] Get user session====================',self.current_user)
+		logging.info('[%s][Mock Login][User session]',self.current_user)
 		with self.client.get('/core/auth/user-session-details', headers={'authority':'www.dev.file.gov.sg','accept':'application/json, text/plain, */*','user-agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36','x-csrf-token':csrf_token,'cookie':'filesg-csrf-id='+csrf_token}, catch_response=True, name='get-session') as response:
 			logging.debug(response.status_code)
 			logging.debug(response.cookies)
-			#logging.debug("[Dict] +++++++++++++++++++++++++")
-			#logging.debug(self.client.cookies.get_dict())
 
 		#3 call mock login with payload which returns filesg_cookie
-		logging.info('[%s] Mock Login====================',self.current_user)
-		#request_body = {'authCode':'S3002610A','nonce':'mock'}
+		logging.info('[%s][Mock Login][Login]',self.current_user)
 		request_body = {'authCode':self.current_user,'nonce':'mock'}
 		with self.client.post('/core/auth/mock-login', json=request_body, headers={'accept':'application/json, text/plain, */*','content-type':'application/json', 'user-agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36'}, catch_response=True, name='mock-login') as response:
 			logging.debug(response.status_code)
 			logging.debug(response.cookies)
-			#logging.debug("[Dict] +++++++++++++++++++++++++")
-			#logging.debug(self.client.cookies.get_dict())
-
-		#4 call get user details (get new session), should return csrf, filesg_cookie
-		#print("[4] Get user details again===================")
-
 
 		#5 call activities
-		logging.info('[%s] Get activities====================',self.current_user)
+		logging.info('[%s][Mock Login][Activities]',self.current_user)
 		with self.client.get('/core/transaction/activities?sortBy=createdAt&asc=false&page=1&limit=3', headers={'accept':'application/json, text/plain, */*','content-type':'application/json', 'user-agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36'}, catch_response=True, name='dashboard/activities') as response:
-			logging.debug(response.status_code)
-			logging.debug(response.cookies)
-			#logging.debug("[Dict] +++++++++++++++++++++++++")
-			#logging.debug(self.client.cookies.get_dict())
-			#print(response.text)	
+			if(response.ok):
+				self.all_activities = response.json()["items"]
+				for each_activity in self.all_activities:
+					logging.info('[%s][Activity][UUID] : %s', self.current_user, each_activity['uuid'])
+					self.individual_activity_files = each_activity['files']
+					for each_file in self.individual_activity_files:
+						logging.info('[%s][Activity][File][UUID] : %s : %s', self.current_user, each_file['uuid'], each_file['name'])
+
+				logging.info('[%s][Count of activities][%s]',self.current_user,len(self.all_activities))
 
 		#6 call files
-		logging.info('[%s] Get files====================',self.current_user)
+		logging.info('[%s][Mock Login][Files]',self.current_user)
 		with self.client.get('/core/file/all-files?sortBy=lastViewedAt&asc=false&page=1&limit=5&statuses=active,expired,revoked&ignoreNull=true', headers={'accept':'application/json, text/plain, */*','content-type':'application/json', 'user-agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36'}, catch_response=True, name='dashboard/files') as response:
 			logging.debug(response.status_code)
 			logging.debug(response.cookies)
-			#logging.debug("[Dict] +++++++++++++++++++++++++")
-			#logging.debug(self.client.cookies.get_dict())
-			#print(response.text)		
 
+			#TODO : Get the list of recently viewed files and store in self.all_files	
+
+	#A user is able to return to the dashboard, which will load the latest 3 activities and files
 	@task(2)
 	def dashboard(self):
-		logging.info('[%s] Return to dashboard====================',self.current_user)
+		logging.info('[%s][Back to dashboard]',self.current_user)
 		with self.client.get('/home', headers={'accept':'application/json, text/plain, */*','content-type':'application/json', 'user-agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36'}, catch_response=True, name='dashboard') as response:
 			logging.debug(response.status_code)
 			logging.debug(response.cookies)
@@ -120,91 +123,120 @@ class PortalAccess(TaskSet):
 			resources = get_embedded_resources(response.content)
 			for resource in resources:
 				if re.search("^https?://", resource) == None: resource = self.client.base_url + "/" + resource
+				#see consolidated or individual resources
 				#self.client.get(resource, name="dashboard/resources")
-				self.client.get(resource)
-				
-
-		with self.client.get('/public/__ENV.js', catch_response=True, name='dashboard') as response:
-			logging.debug(response.status_code)
-
-		with self.client.get('/runtime.514b8778286f2bd8.esm.js', catch_response=True, name='dashboard') as response:
-			logging.debug(response.status_code)
-
-		with self.client.get('/polyfills.0aab7110e6d8af96.esm.js', catch_response=True, name='dashboard') as response:
-			logging.debug(response.status_code)
-
-		with self.client.get('/main.9810e95c3855dcfe.esm.js', catch_response=True, name='dashboard') as response:
-			logging.debug(response.status_code)
-
-		with self.client.get('/sgds-icons.0dc42d75a6d05f595921.ttf', catch_response=True, name='dashboard') as response:
-			logging.debug(response.status_code)
-
-		with self.client.get('/d36bd175268f5fd4.woff', catch_response=True, name='dashboard') as response:
-			logging.debug(response.status_code)
-
-		with self.client.get('/beta-character.481cd27.svg', catch_response=True, name='dashboard') as response:
-			logging.debug(response.status_code)
+				self.client.get(resource,  name='dashboard')
 
 		#5 call activities
 		with self.client.get('/core/transaction/activities?sortBy=createdAt&asc=false&page=1&limit=3', headers={'accept':'application/json, text/plain, */*','content-type':'application/json', 'user-agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36'}, catch_response=True, name='dashboard') as response:
-			logging.debug(response.status_code)
-			logging.debug(response.text)	
+			#logging.info('[%s][Response]',response.status_code)
+			if(response.ok):
+				#logging.info(response.json())
+				#for key, value in response.json().items():
+					#logging.debug("Key is %s : Value is %s", key, value)
+				self.all_activities = response.json()["items"]
+				for each_activity in self.all_activities:
+					#logging.info("JSON [Each Item in the list of JSON Objects] =======================================")
+					#logging.info(each_item)
+					logging.info('[%s][Activity][UUID] : %s', self.current_user, each_activity['uuid'])
+					self.individual_activity_files = each_activity['files']
+					for each_file in self.individual_activity_files:
+						logging.info('[%s][Activity][File][UUID] : %s : %s', self.current_user, each_file['uuid'], each_file['name'])
+
+			#if response.status_code == 200:
+			#	logging.info("OK")
+			#else:
+			#	logging.warning("No info")
 
 		#6 call files
 		with self.client.get('/core/file/all-files?sortBy=lastViewedAt&asc=false&page=1&limit=5&statuses=active,expired,revoked&ignoreNull=true', headers={'accept':'application/json, text/plain, */*','content-type':'application/json', 'user-agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36'}, catch_response=True, name='dashboard') as response:
-			logging.debug(response.status_code)
-			logging.debug(response.text)	
+			#logging.info('[%s][Response]',response.status_code)
+			if(response.ok):
+				#logging.info(response.json())
+				#for key, value in response.json().items():
+					#logging.debug("Key is %s : Value is %s", key, value)
+				all_files = response.json()["items"]
 
-		with self.client.get('/ica-logo-only.10b42bf.svg', catch_response=True, name='dashboard', verify=False ) as response:
-			logging.debug(response.status_code)	
+				for each_file in all_files:
+					#logging.info("JSON [Each Item in the list of JSON Objects] =======================================")
+					#logging.info(each_item)
+					logging.info('[%s][File][UUID] : %s : %s', self.current_user, each_file['uuid'], each_file['name'])						
 
-	@task(1)
+		#misc resources ---------------------------------------------------
+		#with self.client.get('/sgds-icons.0dc42d75a6d05f595921.ttf', catch_response=True, name='dashboard') as response:
+		#	logging.debug(response.status_code)
+
+		#with self.client.get('/d36bd175268f5fd4.woff', catch_response=True, name='dashboard') as response:
+		#	logging.debug(response.status_code)
+
+		#with self.client.get('/beta-character.481cd27.svg', catch_response=True, name='dashboard') as response:
+		#	logging.debug(response.status_code)
+
+		#with self.client.get('/ica-logo-only.10b42bf.svg', catch_response=True, name='dashboard', verify=False ) as response:
+		#	logging.debug(response.status_code)	
+
+	#from the LHS menu, go to the All Activities page
+	@task
 	def all_activities(self):
-		self.client.verify = False
-		logging.info('[%s] LHS All Activities====================',self.current_user)
+		logging.info('[%s][LHS][All Activities]', self.current_user)
 		with self.client.get('/core/transaction/activities?sortBy=createdAt&asc=false&page=1&limit=10', headers={'accept':'application/json, text/plain, */*','content-type':'application/json', 'user-agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36'}, catch_response=True, name='LHS-menu-all-activities') as response:
 			logging.debug(response.status_code)
 			logging.debug(response.cookies)
-			#logging.debug("[Dict] +++++++++++++++++++++++++")
-			#logging.debug(self.client.cookies.get_dict())
-			#print(response.text)
 
-	#@task(2)
-	#def go_community(self):
-	#	print('ProcessNumberTask|go_community------------------------')
-		#self.client.get('/community', verify=False)
-	#	self.client.get('/', verify=False)
+	#from dashboard, a user is able to view the individual activity
+	@task(3)
+	def view_individual_activity(self):
+		logging.info('[%s][View Individual Activity]',self.current_user)
+		
+		#check if list is empty or not. If not empty, access a random activity
+		if self.all_activities:
+			#randomly select an activity to view
+			activity_to_view = random.choice(self.all_activities)
+			try:
+				with self.client.get('/activities/'+activity_to_view['uuid'], headers={'accept':'application/json, text/plain, */*','content-type':'application/json', 'user-agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36'}, catch_response=True, name='LHS-menu-all-activities') as response:
+					response.raise_for_status()
+					logging.info('[%s][View Individual Activity][%s]',self.current_user,activity_to_view['uuid'])
+					#view the files within the activity
+					
+					##if status code within 200 - 400. Might not need with raise for status.
+					#if response.ok:
+					#	logging.info('[%s][View Activity][%s]',self.current_user,activity_to_view['uuid'])		
+					#else:
+					#	logging.warning("[%s][View Activity][Unable to retrieve individual activity",self.current_user)
+			except HTTPError as http_err:
+				logging.error(http_err)
+			except Exception as err:
+				logging.error(err)
+		else:
+			logging.info('[%s][View Individual Activity][No activities available]',self.current_user)			
 
-	#@task(3)
-	#def go_career(self):
-	#	print('ProcessNumberTask|go_career------------------------')
-		#self.client.get('/careers', verify=False)
-	#	self.client.get('/', verify=False)				
+	#from dashboard, a user is able to view the file(s)
+	@task(3)
+	def view_file(self):
+		logging.info('[%s][View file]',self.current_user)
+		#tbc		
 
-class Userflow(TaskSet):
+	def on_stop():
+		logging.info("[%s][Logging out]",self.current_user)
+
+#TODO
+class NonFileSGUserActivities(TaskSet):
 	def on_start(self):
-		#self.client.verify = False
 		self.client.get('/')
 				
 	@task(1)
 	def check_flow(self):
 		self.client.get('/')
-		#step 1
-		#self.client.get('/about/about-us', verify=False)
-		#step 2
-		#self.client.get('/workplace', verify=False)
-		#step 3
-		#self.client.get('/partners', verify=False)
 
-class HelloWorldUser(HttpUser):
+class FileSGPerformanceTest(HttpUser):
     wait_time = between(0.5, 2.5)
     def on_start(self):
-    	logging.info('Initial Startup for each vu========================')
+    	logging.info('[Main][On start for each vu]')
 
-    tasks = [PortalAccess]
+    tasks = [FileSGUserActivities]
 
     def __init__(self, environment):
-        super(HelloWorldUser, self).__init__(environment)
+        super(FileSGPerformanceTest, self).__init__(environment)
         global ACCOUNTS
         if (ACCOUNTS == None):
             with open('test.csv') as f:
